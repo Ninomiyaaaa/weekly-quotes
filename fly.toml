@@ -1,0 +1,39 @@
+app = "weekly-quotes"
+primary_region = "sin"  # 新加坡区域，您可以根据需要修改
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "3000"
+  TZ = "Asia/Shanghai"  # 设置时区为上海
+  WEBHOOK_URL = ""  # 企业微信 webhook 地址
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 1  # 确保至少有一个实例在运行
+  processes = ["app"]
+  
+  # 安全配置
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 100
+    soft_limit = 50
+
+[[http_service.checks]]
+  type = "http"
+  interval = "15s"
+  timeout = "2s"
+  grace_period = "5s"
+  method = "GET"
+  path = "/current-issue"
+  protocol = "http"
+  tls_skip_verify = true
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 256 
