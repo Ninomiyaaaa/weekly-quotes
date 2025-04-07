@@ -6,11 +6,18 @@ import rateLimit from 'koa-ratelimit';
 import { fetchWeeklyQuotes, fetchAndPushWithoutSaving } from './services/fetcher.js';
 import { setupLogger } from './utils/logger.js';
 import { DataStore } from './services/dataStore.js';
+import { connectDB } from './config/database.js';
 
 const app = new Koa();
 const router = new Router();
 const logger = setupLogger();
 const dataStore = new DataStore();
+
+// 连接数据库
+connectDB().then(() => {
+  // 初始化数据存储
+  dataStore.initialize();
+});
 
 // 速率限制配置
 const rateLimiter = rateLimit({
@@ -50,13 +57,16 @@ router.get('/current-issue', async (ctx) => {
 
 router.post('/trigger-fetch', async (ctx) => {
   try {
-    const quotes = await fetchWeeklyQuotes(dataStore.getCurrentIssue());
-    await dataStore.saveQuotes(quotes);
+    const currentIssue = dataStore.getCurrentIssue();
+    const quotes = await fetchWeeklyQuotes(currentIssue);
+    const savedQuotes = await dataStore.saveQuotes(quotes);
     ctx.body = {
       success: true,
-      quotes
+      quotes: savedQuotes,
+      currentIssue: dataStore.getCurrentIssue()
     };
   } catch (error) {
+    await dataStore.saveFailedQuote(dataStore.getCurrentIssue(), error);
     ctx.status = 500;
     ctx.body = {
       error: error.message
@@ -79,6 +89,7 @@ router.post('/fetch-and-push', async (ctx) => {
       result
     };
   } catch (error) {
+    await dataStore.saveFailedQuote(issueNumber || dataStore.getCurrentIssue(), error);
     ctx.status = 500;
     ctx.body = {
       error: error.message
@@ -88,7 +99,7 @@ router.post('/fetch-and-push', async (ctx) => {
 
 router.get('/history', async (ctx) => {
   ctx.body = {
-    history: dataStore.getHistory()
+    history: await dataStore.getHistory()
   };
 });
 
@@ -103,6 +114,7 @@ cron.schedule('0 9 * * 1', async () => {
     await dataStore.saveQuotes(quotes);
     logger.info(`Successfully fetched and saved quotes for issue ${dataStore.getCurrentIssue()}`);
   } catch (error) {
+    await dataStore.saveFailedQuote(dataStore.getCurrentIssue(), error);
     logger.error(`Error in scheduled fetch: ${error.message}`);
   }
 });

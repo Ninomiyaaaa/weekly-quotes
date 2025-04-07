@@ -7,7 +7,6 @@ primary_region = "sin"  # 新加坡区域，您可以根据需要修改
 [env]
   PORT = "3000"
   TZ = "Asia/Shanghai"  # 设置时区为上海
-  WEBHOOK_URL = ""  # 企业微信 webhook 地址
 
 [http_service]
   internal_port = 3000

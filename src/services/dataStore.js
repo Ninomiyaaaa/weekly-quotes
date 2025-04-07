@@ -1,59 +1,82 @@
-import fs from 'fs';
-import path from 'path';
+import { Quote } from '../models/Quote.js';
 import { logger } from '../utils/logger.js';
 
 export class DataStore {
   constructor() {
-    this.dataFile = 'data/store.json';
-    this.data = this.loadData();
+    this.currentIssue = 342; // 默认值
   }
 
-  loadData() {
+  async initialize() {
     try {
-      if (!fs.existsSync('data')) {
-        fs.mkdirSync('data');
+      // 获取最新的期数
+      const latestQuote = await Quote.findOne().sort({ issueNumber: -1 });
+      if (latestQuote) {
+        this.currentIssue = latestQuote.issueNumber;
       }
-
-      if (!fs.existsSync(this.dataFile)) {
-        const initialData = {
-          currentIssue: 342,
-          history: []
-        };
-        fs.writeFileSync(this.dataFile, JSON.stringify(initialData, null, 2));
-        return initialData;
-      }
-
-      const data = JSON.parse(fs.readFileSync(this.dataFile, 'utf8'));
-      return data;
+      logger.info(`Initialized with current issue: ${this.currentIssue}`);
     } catch (error) {
-      logger.error(`Error loading data: ${error.message}`);
-      return {
-        currentIssue: 342,
-        history: []
-      };
-    }
-  }
-
-  saveData() {
-    try {
-      fs.writeFileSync(this.dataFile, JSON.stringify(this.data, null, 2));
-    } catch (error) {
-      logger.error(`Error saving data: ${error.message}`);
+      logger.error(`Error initializing DataStore: ${error.message}`);
     }
   }
 
   getCurrentIssue() {
-    return this.data.currentIssue;
+    return this.currentIssue;
   }
 
-  getHistory() {
-    return this.data.history;
+  incrementIssue() {
+    this.currentIssue += 1;
+    logger.info(`Incremented current issue to: ${this.currentIssue}`);
+  }
+
+  async getHistory() {
+    try {
+      return await Quote.find().sort({ issueNumber: -1 });
+    } catch (error) {
+      logger.error(`Error getting history: ${error.message}`);
+      return [];
+    }
   }
 
   async saveQuotes(quotes) {
-    this.data.history.push(quotes);
-    this.data.currentIssue++;
-    this.saveData();
-    return quotes;
+    try {
+      // 先增加期数
+      this.incrementIssue();
+      
+      const quote = new Quote({
+        issueNumber: this.currentIssue, // 使用增加后的期数
+        text: quotes.text,
+        fetchedAt: new Date(),
+        pushedAt: new Date(),
+        status: 'success'
+      });
+
+      await quote.save();
+      logger.info(`Successfully saved quotes for issue ${this.currentIssue}`);
+      return {
+        ...quotes,
+        issueNumber: this.currentIssue
+      };
+    } catch (error) {
+      logger.error(`Error saving quotes: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async saveFailedQuote(issueNumber, error) {
+    try {
+      const quote = new Quote({
+        issueNumber,
+        text: '',
+        fetchedAt: new Date(),
+        pushedAt: new Date(),
+        status: 'failed',
+        error: error.message
+      });
+
+      await quote.save();
+      logger.error(`Saved failed quote for issue ${issueNumber}: ${error.message}`);
+    } catch (error) {
+      logger.error(`Error saving failed quote: ${error.message}`);
+    }
   }
 }
